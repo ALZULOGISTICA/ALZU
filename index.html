@@ -536,7 +536,12 @@ tbody tr:hover{background:rgba(255,255,255,0.02)}
         <div class="ft" id="pf-sec"></div>
         <div class="ft" id="pf-st"></div>
       </div>
-      <div class="tw"><table><thead><tr><th>Producto</th><th>Sector</th><th>SKU</th><th>Cantidad</th><th>Mínimo</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead><tbody id="ptb"></tbody></table></div>
+      <div id="sel-bar" style="display:none;align-items:center;gap:0.75rem;background:rgba(232,25,44,0.08);border:1px solid rgba(232,25,44,0.25);border-radius:var(--r);padding:0.5rem 1rem;margin-bottom:0.75rem">
+        <span id="sel-count" style="font-size:0.78rem;font-weight:600;color:var(--red3)">0 seleccionados</span>
+        <button class="btn btn-red btn-sm" onclick="delSeleccionados()">🗑 Borrar seleccionados</button>
+        <button class="btn btn-sm" onclick="deselAll()">✕ Cancelar</button>
+      </div>
+      <div class="tw"><table><thead><tr><th style="width:32px"><input type="checkbox" id="chk-all" onchange="toggleAll(this)" style="cursor:pointer;accent-color:var(--red)"></th><th>Producto</th><th>Sector</th><th>SKU</th><th>Cantidad</th><th>Mínimo</th><th>Ubicación</th><th>Estado</th><th></th></tr></thead><tbody id="ptb"></tbody></table></div>
     </div>
 
     <!-- PEDIDOS -->
@@ -1100,10 +1105,11 @@ function rProds(){
     return mq&&ms&&mst;
   });
   const tb=document.getElementById('ptb');
-  if(!list.length){tb.innerHTML='<tr><td colspan="8"><div class="emp"><div class="ei">📦</div><p>Sin resultados</p></div></td></tr>';return}
+  if(!list.length){tb.innerHTML='<tr><td colspan="9"><div class="emp"><div class="ei">📦</div><p>Sin resultados</p></div></td></tr>';return}
   tb.innerHTML=list.map(p=>{
     const st=qSt(p);const s=sec(p.sector);
     return`<tr>
+      <td><input type="checkbox" class="prod-chk" data-id="${p.id}" onchange="updSel()" style="cursor:pointer;accent-color:var(--red)"></td>
       <td><div class="pc"><div class="pthumb" ${p.img?`onclick="viewImg('${p.img}','${(p.name||'').replace(/'/g,"\\'")}');event.stopPropagation()" style="cursor:zoom-in" title="Ver imagen"`:''} >${p.img?`<img src="${p.img}" alt="">`:'📦'}</div><div><div class="pn">${p.name}</div><div class="psk">${p.sku||'—'}</div></div></div></td>
       <td>${s?`<span class="stg" style="color:${s.color};border-color:${s.color}33">${s.name}</span>`:'<span style="color:var(--t3)">—</span>'}</td>
       <td style="font-family:var(--mono);font-size:0.65rem;color:var(--t3)">${p.sku||'—'}</td>
@@ -1117,9 +1123,36 @@ function rProds(){
       </div></td>
     </tr>`;
   }).join('');
+  updSel();
 }
 function setPSF(id,el){pSF=id;rProds()}
 function setPStat(st,el){pStat=st;rProds()}
+function toggleAll(chk){
+  document.querySelectorAll('.prod-chk').forEach(c=>c.checked=chk.checked);
+  updSel();
+}
+function updSel(){
+  const chks=[...document.querySelectorAll('.prod-chk')];
+  const sel=chks.filter(c=>c.checked);
+  const bar=document.getElementById('sel-bar');
+  const cnt=document.getElementById('sel-count');
+  const all=document.getElementById('chk-all');
+  if(bar){bar.style.display=sel.length?'flex':'none';}
+  if(cnt)cnt.textContent=sel.length+' seleccionado'+(sel.length!==1?'s':'');
+  if(all){all.checked=chks.length>0&&sel.length===chks.length;all.indeterminate=sel.length>0&&sel.length<chks.length;}
+}
+function deselAll(){
+  document.querySelectorAll('.prod-chk').forEach(c=>c.checked=false);
+  const all=document.getElementById('chk-all');if(all)all.checked=false;
+  updSel();
+}
+function delSeleccionados(){
+  const ids=[...document.querySelectorAll('.prod-chk:checked')].map(c=>c.dataset.id);
+  if(!ids.length)return;
+  if(!confirm(`¿Eliminar ${ids.length} producto${ids.length!==1?'s':''}?`))return;
+  db.products=db.products.filter(p=>!ids.includes(p.id));
+  saveDB();rProds();toast(`${ids.length} producto${ids.length!==1?'s':''} eliminado${ids.length!==1?'s':''} ✓`);
+}
 function openProdMo(){editPid=null;imgData=null;document.getElementById('mpt').innerHTML='NUEVO <em>PRODUCTO</em>';['fn','fsk','fl','fd','fu'].forEach(i=>document.getElementById(i).value='');document.getElementById('fq').value='';document.getElementById('fm').value='';document.getElementById('ipv').innerHTML='';selEmoji('📦');fillSel('fse');fillListaSel('flista','');openMo('mo-prod')}
 function openEditProd(id){
   const p=db.products.find(x=>x.id===id);if(!p)return;
