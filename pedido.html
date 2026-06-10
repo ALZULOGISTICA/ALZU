@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b1221">
+<title>ALZU LOGÍSTICA · Hacé tu pedido</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+
+<!-- ════════════════════════════════════════════
+     FIREBASE · mismo proyecto que el panel ALZU
+     Los pedidos se escriben en el mismo documento
+     (alzu/data → orders) para que aparezcan solos
+     en el panel de administración, en tiempo real.
+══════════════════════════════════════════════ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, updateDoc, arrayUnion, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCmmzx6Y329MwI58DluD9u75TjI9MEOY4E",
+    authDomain: "alzu-915ed.firebaseapp.com",
+    projectId: "alzu-915ed",
+    storageBucket: "alzu-915ed.firebasestorage.app",
+    messagingSenderId: "278250201847",
+    appId: "1:278250201847:web:33d04b49ad7070c55529f2"
+  };
+
+  const app = initializeApp(FIREBASE_CONFIG);
+  const db  = getFirestore(app);
+  const REF = doc(db, 'alzu', 'data');
+
+  // Escucha el catálogo en vivo: si el admin agrega/edita productos
+  // o cambia el stock, el cliente lo ve sin recargar.
+  window.ALZU_listen = (cb, onErr) => {
+    return onSnapshot(REF,
+      (snap) => cb(snap.exists() ? snap.data() : null),
+      (err)  => { console.warn('Firestore listen:', err); onErr && onErr(err); }
+    );
+  };
+
+  // Envía un pedido. arrayUnion agrega el pedido SIN sobrescribir
+  // nada de lo que ya está en el documento (productos, otros pedidos…).
+  window.ALZU_sendOrder = async (order) => {
+    try {
+      await updateDoc(REF, {
+        orders: arrayUnion(order),
+        _lastWebOrder: new Date().toISOString()
+      });
+      return { ok: true };
+    } catch (e) {
+      // Si el documento no existiera todavía, lo creamos sin pisar datos.
+      try {
+        const snap = await getDoc(REF);
+        const data = snap.exists() ? snap.data() : {};
+        const orders = Array.isArray(data.orders) ? data.orders.slice() : [];
+        orders.push(order);
+        await setDoc(REF, { ...data, orders, _lastWebOrder: new Date().toISOString() }, { merge: true });
+        return { ok: true };
+      } catch (e2) {
+        console.error('No se pudo enviar el pedido:', e2);
+        return { ok: false, error: (e2 && (e2.code || e2.message)) || 'error' };
+      }
+    }
+  };
+
+  window.dispatchEvent(new Event('alzu-ready'));
+</script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b1221; --bg2:#070e1c; --panel:#0d1526; --panel2:#10192c; --ink:#0a0f1e;
+  --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
+  --t1:#f1f5f9; --t2:#94a3b8; --t3:#5b6b83; --t4:#33415c;
+  --red:#e8192c; --red2:#c41122; --red3:#ff6b7a; --redbg:rgba(232,25,44,.10);
+  --ok:#10b981; --okbg:rgba(16,185,129,.12);
+  --warn:#f59e0b; --warnbg:rgba(245,158,11,.12);
+  --info:#3b82f6;
+  --font:'DM Sans',system-ui,sans-serif; --mono:'DM Mono',ui-monospace,monospace; --disp:'Syne',sans-serif;
+  --r:8px; --r2:12px; --r3:16px;
+  --maxw:1180px;
+}
+html,body{background:var(--bg);color:var(--t1)}
+body{
+  font-family:var(--font);font-size:14px;line-height:1.5;letter-spacing:-.01em;
+  min-height:100dvh;
+  background:
+    radial-gradient(1100px 520px at 88% -8%, rgba(232,25,44,.10), transparent 60%),
+    radial-gradient(900px 480px at -6% 4%, rgba(59,130,246,.07), transparent 55%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased;
+}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:6px}
+::-webkit-scrollbar-thumb:hover{background:rgba(232,25,44,.45)}
+a{color:inherit}
+button{font-family:inherit}
+:focus-visible{outline:2px solid var(--red3);outline-offset:2px;border-radius:4px}
+
+/* ── HEADER ── */
+.hd{
+  position:sticky;top:0;z-index:40;
+  background:rgba(8,13,26,.78);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.hd-in{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;gap:1rem;
+  padding:.85rem clamp(1rem,4vw,2rem)}
+.brand{display:flex;flex-direction:column;line-height:1;margin-right:auto}
+.brand .lg{font-family:var(--disp);font-weight:800;font-size:1.35rem;letter-spacing:.02em}
+.brand .lg em{color:var(--red);font-style:normal}
+.brand .sb{font-size:.56rem;letter-spacing:.28em;text-transform:uppercase;color:var(--t3);margin-top:5px;font-weight:600}
+.conn{display:inline-flex;align-items:center;gap:.45rem;font-size:.62rem;letter-spacing:.05em;
+  color:var(--t2);font-family:var(--mono);white-space:nowrap}
+.conn .dot{width:7px;height:7px;border-radius:50%;background:var(--t4);transition:background .3s}
+.conn.on .dot{background:var(--ok);box-shadow:0 0 0 4px rgba(16,185,129,.14)}
+.conn.off .dot{background:var(--warn)}
+
+/* ── LAYOUT ── */
+.hero{max-width:var(--maxw);margin:0 auto;padding:clamp(1.6rem,4vw,2.6rem) clamp(1rem,4vw,2rem) .6rem}
+.hero h1{font-family:var(--disp);font-weight:800;font-size:clamp(1.7rem,4.5vw,2.7rem);letter-spacing:-.02em;line-height:1.02}
+.hero h1 em{color:var(--red3);font-style:normal}
+.hero p{color:var(--t2);max-width:46ch;margin-top:.7rem;font-size:clamp(.85rem,2.4vw,1rem)}
+.scope{display:inline-flex;align-items:center;gap:.5rem;margin-top:1rem;padding:.4rem .8rem;
+  border:1px solid var(--line2);border-radius:999px;background:var(--redbg);font-size:.72rem;color:var(--red3);font-weight:600}
+
+.wrap{max-width:var(--maxw);margin:0 auto;padding:1.2rem clamp(1rem,4vw,2rem) 7rem;
+  display:grid;grid-template-columns:minmax(0,1fr) 392px;gap:clamp(1rem,3vw,2rem);align-items:start}
+@media (max-width:920px){ .wrap{grid-template-columns:1fr;padding-bottom:8.5rem} }
+
+/* ── SECTION TITLES ── */
+.eyebrow{display:flex;align-items:baseline;gap:.6rem;margin:1.4rem 0 .85rem}
+.eyebrow .n{font-family:var(--mono);font-size:.7rem;color:var(--red);font-weight:500}
+.eyebrow h2{font-family:var(--disp);font-weight:700;font-size:1.05rem;letter-spacing:.01em}
+.eyebrow .ln{flex:1;height:1px;background:var(--line)}
+.build > .eyebrow:first-child{margin-top:0}
+
+/* ── SEARCH + CHIPS ── */
+.toolbar{display:flex;flex-wrap:wrap;gap:.6rem;margin-bottom:1rem}
+.search{flex:1;min-width:180px;position:relative}
+.search input{width:100%;background:var(--ink);border:1px solid var(--line);color:var(--t1);
+  font:inherit;font-size:.85rem;padding:.62rem .9rem .62rem 2.1rem;border-radius:var(--r);outline:none;transition:border-color .15s,box-shadow .15s}
+.search input::placeholder{color:var(--t3)}
+.search input:focus{border-color:rgba(232,25,44,.55);box-shadow:0 0 0 3px rgba(232,25,44,.10)}
+.search svg{position:absolute;left:.7rem;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--t3)}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap}
+.chip{font-size:.72rem;font-weight:600;padding:.5rem .85rem;border-radius:999px;cursor:pointer;
+  background:transparent;border:1px solid var(--line);color:var(--t2);transition:.12s;user-select:none}
+.chip:hover{color:var(--t1);border-color:var(--line2)}
+.chip.on{color:#fff;background:var(--red);border-color:var(--red)}
+
+/* ── PRODUCT GRID ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:.7rem}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;
+  display:flex;flex-direction:column;transition:border-color .15s,transform .15s}
+.pcard:hover{border-color:var(--line2)}
+.pcard.added{border-color:rgba(232,25,44,.55);box-shadow:0 0 0 1px rgba(232,25,44,.35) inset}
+.pthumb{aspect-ratio:1/.78;background:var(--ink);display:flex;align-items:center;justify-content:center;
+  overflow:hidden;position:relative}
+.pthumb img{width:100%;height:100%;object-fit:cover}
+.pthumb .emoji{font-size:2.4rem}
+.pbody{padding:.65rem .75rem .75rem;display:flex;flex-direction:column;gap:.45rem;flex:1}
+.pname{font-weight:600;font-size:.82rem;line-height:1.25;color:var(--t1)}
+.pmeta{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;font-size:.62rem}
+.ptag{display:inline-block;padding:.1rem .42rem;border-radius:4px;font-weight:700;letter-spacing:.05em;
+  text-transform:uppercase;border:1px solid;font-size:.56rem}
+.avail{display:inline-flex;align-items:center;gap:.3rem;font-family:var(--mono);font-size:.62rem;font-weight:500;
+  padding:.16rem .42rem;border-radius:5px;border:1px solid}
+.avail.ok{color:var(--ok);background:var(--okbg);border-color:rgba(16,185,129,.28)}
+.avail.low{color:var(--warn);background:var(--warnbg);border-color:rgba(245,158,11,.28)}
+.avail.out{color:var(--red3);background:var(--redbg);border-color:rgba(232,25,44,.30)}
+.padd{margin-top:auto}
+.btn-add{width:100%;border:1px solid var(--line2);background:var(--panel2);color:var(--t1);
+  font-weight:600;font-size:.76rem;padding:.5rem;border-radius:var(--r);cursor:pointer;transition:.12s}
+.btn-add:hover{border-color:var(--red);color:#fff;background:rgba(232,25,44,.12)}
+.stepper{display:flex;align-items:center;justify-content:space-between;gap:.4rem;
+  background:var(--ink);border:1px solid var(--red);border-radius:var(--r);padding:.18rem}
+.stepper button{width:30px;height:28px;border:none;border-radius:6px;background:rgba(255,255,255,.05);
+  color:var(--t1);font-size:1.1rem;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.1s}
+.stepper button:hover{background:var(--red);color:#fff}
+.stepper .q{font-family:var(--mono);font-weight:600;font-size:.95rem;min-width:2.2ch;text-align:center}
+
+/* ── CUSTOM ITEM ── */
+.custom{background:var(--panel);border:1px dashed var(--line2);border-radius:var(--r2);padding:1.05rem 1.1rem}
+.custom .lead{display:flex;align-items:center;gap:.55rem;margin-bottom:.85rem}
+.custom .lead .ic{width:30px;height:30px;border-radius:8px;background:var(--redbg);border:1px solid rgba(232,25,44,.3);
+  display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+.custom .lead b{font-family:var(--disp);font-size:.92rem;font-weight:700}
+.custom .lead span{font-size:.68rem;color:var(--t3)}
+.crow{display:grid;grid-template-columns:1fr 84px 96px auto;gap:.5rem;align-items:end}
+@media (max-width:560px){.crow{grid-template-columns:1fr 1fr;}.crow .c-add{grid-column:1/-1}}
+.fld label{display:block;font-size:.58rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:5px}
+.fld input,.fld textarea{width:100%;background:var(--ink);border:1px solid var(--line);color:var(--t1);
+  font:inherit;font-size:.84rem;padding:.55rem .7rem;border-radius:var(--r);outline:none;transition:border-color .15s,box-shadow .15s}
+.fld input::placeholder,.fld textarea::placeholder{color:var(--t4)}
+.fld input:focus,.fld textarea:focus{border-color:rgba(232,25,44,.55);box-shadow:0 0 0 3px rgba(232,25,44,.10)}
+.fld textarea{resize:vertical;min-height:62px;line-height:1.55}
+.c-add{height:42px;padding:0 1rem;border:none;border-radius:var(--r);background:var(--red);color:#fff;
+  font-weight:700;font-size:.8rem;cursor:pointer;transition:.12s;white-space:nowrap}
+.c-add:hover{background:var(--red2)}
+
+/* ── TICKET (sticky) ── */
+.side{position:sticky;top:84px}
+@media (max-width:920px){.side{position:static}}
+.ticket{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+  border:1px solid var(--line2);border-radius:var(--r3);overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.tk-h{padding:1rem 1.2rem;display:flex;align-items:center;justify-content:space-between;
+  background:var(--ink);border-bottom:1px solid var(--line)}
+.tk-h .ti{font-family:var(--disp);font-weight:700;font-size:1rem;letter-spacing:.02em}
+.tk-h .ti em{color:var(--red3);font-style:normal}
+.tk-count{font-family:var(--mono);font-size:.7rem;color:var(--t2);background:rgba(255,255,255,.05);
+  border:1px solid var(--line);padding:.2rem .55rem;border-radius:999px}
+.tk-lines{max-height:38vh;overflow-y:auto;padding:.4rem .55rem}
+.tk-empty{text-align:center;color:var(--t3);padding:2rem 1rem;font-size:.8rem;line-height:1.6}
+.tk-empty .big{font-size:1.8rem;display:block;margin-bottom:.4rem;opacity:.55}
+.line{display:flex;align-items:center;gap:.6rem;padding:.55rem .6rem;border-radius:var(--r);transition:background .1s}
+.line:hover{background:rgba(255,255,255,.025)}
+.line + .line{border-top:1px solid var(--line)}
+.line .lt{flex:1;min-width:0}
+.line .ln{font-size:.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.line .ls{font-size:.62rem;color:var(--t3);margin-top:1px}
+.line .ls.custom-tag{color:var(--red3)}
+.mini{display:flex;align-items:center;gap:.1rem;background:var(--ink);border:1px solid var(--line);border-radius:7px;padding:.1rem}
+.mini button{width:24px;height:24px;border:none;background:transparent;color:var(--t2);font-size:1rem;line-height:1;cursor:pointer;border-radius:5px}
+.mini button:hover{background:var(--red);color:#fff}
+.mini .mq{font-family:var(--mono);font-size:.78rem;font-weight:600;min-width:2ch;text-align:center;color:var(--t1)}
+.line .rm{background:transparent;border:none;color:var(--t4);cursor:pointer;font-size:.95rem;padding:.2rem .3rem;border-radius:5px}
+.line .rm:hover{color:var(--red3);background:var(--redbg)}
+
+.perf{height:18px;position:relative;background:var(--ink)}
+.perf::before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle at 9px 9px,var(--bg) 5px,transparent 5.5px);
+  background-size:18px 18px;background-position:-9px 0}
+.perf::after{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px dashed var(--line2)}
+
+.tk-form{padding:1rem 1.2rem 1.2rem}
+.tk-form .fld{margin-bottom:.7rem}
+.fr2{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.req{color:var(--red3)}
+.submit{width:100%;margin-top:.3rem;border:none;border-radius:var(--r2);background:var(--red);color:#fff;
+  font-family:var(--disp);font-weight:700;font-size:.95rem;letter-spacing:.02em;padding:.95rem;cursor:pointer;
+  transition:.15s;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.submit:hover:not(:disabled){background:var(--red2);transform:translateY(-1px)}
+.submit:disabled{opacity:.5;cursor:not-allowed}
+.submit .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tk-note{font-size:.66rem;color:var(--t3);text-align:center;margin-top:.7rem;line-height:1.5}
+
+/* ── MOBILE BAR ── */
+.mbar{position:fixed;left:0;right:0;bottom:0;z-index:45;display:none;
+  background:rgba(8,13,26,.92);backdrop-filter:blur(14px);border-top:1px solid var(--line2);
+  padding:.7rem clamp(1rem,4vw,2rem);padding-bottom:calc(.7rem + env(safe-area-inset-bottom))}
+.mbar-in{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;gap:.9rem}
+.mbar .info{flex:1;min-width:0}
+.mbar .info b{font-family:var(--disp);font-size:1.05rem}
+.mbar .info span{display:block;font-size:.66rem;color:var(--t2)}
+.mbar button{border:none;border-radius:var(--r);background:var(--red);color:#fff;font-weight:700;font-size:.85rem;
+  padding:.8rem 1.3rem;cursor:pointer}
+@media (max-width:920px){.mbar.show{display:block}}
+
+/* ── CONFIRMATION ── */
+.done{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;padding:1.2rem;
+  background:rgba(5,9,18,.84);backdrop-filter:blur(12px)}
+.done.show{display:flex}
+.dbox{width:100%;max-width:430px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r3);
+  overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);animation:rise .35s cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+.dtop{background:var(--red);padding:1.8rem 1.5rem 1.5rem;text-align:center;position:relative;overflow:hidden}
+.dtop::after{content:"";position:absolute;left:0;right:0;bottom:-9px;height:18px;
+  background-image:radial-gradient(circle at 9px 9px,var(--panel) 5px,transparent 5.5px);background-size:18px 18px;background-position:-9px 0}
+.dcheck{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.16);border:2px solid #fff;
+  display:flex;align-items:center;justify-content:center;margin:0 auto .8rem;font-size:1.8rem}
+.dtop h3{font-family:var(--disp);font-weight:800;font-size:1.4rem;color:#fff;letter-spacing:.01em}
+.dtop p{color:rgba(255,255,255,.85);font-size:.82rem;margin-top:.3rem}
+.dbody{padding:1.6rem 1.5rem 1.3rem;text-align:center}
+.dcode-l{font-size:.58rem;letter-spacing:.2em;text-transform:uppercase;color:var(--t3);font-weight:700}
+.dcode{font-family:var(--mono);font-weight:500;font-size:1.7rem;color:var(--t1);letter-spacing:.06em;margin:.25rem 0 .1rem}
+.dsum{color:var(--t2);font-size:.8rem;margin-top:.8rem;line-height:1.55}
+.dsum b{color:var(--t1)}
+.dbtn{margin-top:1.4rem;width:100%;border:1px solid var(--line2);background:var(--panel2);color:var(--t1);
+  font-weight:700;font-size:.85rem;padding:.8rem;border-radius:var(--r2);cursor:pointer;transition:.12s}
+.dbtn:hover{border-color:var(--red);color:#fff}
+
+/* ── STATES ── */
+.state{grid-column:1/-1;text-align:center;padding:3rem 1rem;color:var(--t3)}
+.state .big{font-size:2.2rem;display:block;margin-bottom:.6rem;opacity:.6}
+.skel{background:linear-gradient(100deg,var(--panel) 30%,var(--panel2) 50%,var(--panel) 70%);
+  background-size:200% 100%;animation:sh 1.3s infinite;border-radius:var(--r2);height:188px}
+@keyframes sh{to{background-position:-200% 0}}
+
+/* ── TOAST ── */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);z-index:100;
+  background:var(--ink);border:1px solid var(--line2);color:var(--t1);font-size:.82rem;font-weight:500;
+  padding:.7rem 1.1rem;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:.25s}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{border-color:rgba(232,25,44,.5);color:var(--red3)}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="hd">
+  <div class="hd-in">
+    <div class="brand">
+      <div class="lg">ALZU<em>.</em></div>
+      <div class="sb">Logística</div>
+    </div>
+    <div class="conn off" id="conn"><span class="dot"></span><span id="conn-txt">Conectando…</span></div>
+  </div>
+</header>
+
+<section class="hero">
+  <h1>Hacé tu <em>pedido</em></h1>
+  <p>Elegí los productos del catálogo, sumá los que necesites por tu cuenta y dejanos tus datos. Nosotros nos encargamos del resto.</p>
+  <div class="scope" id="scope" style="display:none"></div>
+</section>
+
+<main class="wrap">
+  <!-- IZQUIERDA · armar el pedido -->
+  <section class="build">
+    <div class="eyebrow"><span class="n">01</span><h2 id="cat-title">Catálogo</h2><span class="ln"></span></div>
+
+    <div class="toolbar">
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" type="search" placeholder="Buscar un producto…" autocomplete="off">
+      </div>
+    </div>
+    <div class="chips" id="chips"></div>
+
+    <div class="grid" id="grid" style="margin-top:1rem">
+      <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+    </div>
+
+    <div class="eyebrow"><span class="n">02</span><h2>Agregá otros productos</h2><span class="ln"></span></div>
+    <div class="custom">
+      <div class="lead">
+        <span class="ic">✏️</span>
+        <div><b>¿No está en el catálogo?</b> <span>Escribilo y lo sumamos a tu pedido.</span></div>
+      </div>
+      <div class="crow">
+        <div class="fld"><label>Producto</label><input id="c-name" placeholder="Ej: Pallets de madera" autocomplete="off"></div>
+        <div class="fld"><label>Cantidad</label><input id="c-qty" type="number" min="1" value="1" inputmode="numeric"></div>
+        <div class="fld"><label>Unidad</label><input id="c-unit" placeholder="u, cajas…" autocomplete="off"></div>
+        <button class="c-add" id="c-add" type="button">Agregar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- DERECHA · ticket + datos -->
+  <aside class="side">
+    <div class="ticket" id="ticket">
+      <div class="tk-h">
+        <div class="ti">Tu <em>pedido</em></div>
+        <div class="tk-count" id="tk-count">0 ítems</div>
+      </div>
+      <div class="tk-lines" id="tk-lines">
+        <div class="tk-empty"><span class="big">🧾</span>Todavía no agregaste nada.<br>Sumá productos del catálogo o cargá los tuyos.</div>
+      </div>
+      <div class="perf"></div>
+      <div class="tk-form">
+        <div class="eyebrow" style="margin:.2rem 0 .8rem"><span class="n">03</span><h2>Tus datos</h2><span class="ln"></span></div>
+        <div class="fld"><label>Nombre o empresa <span class="req">*</span></label><input id="f-client" placeholder="¿A nombre de quién va el pedido?" autocomplete="organization"></div>
+        <div class="fr2">
+          <div class="fld"><label>Email</label><input id="f-email" type="email" placeholder="tu@email.com" autocomplete="email"></div>
+          <div class="fld"><label>WhatsApp / Tel.</label><input id="f-phone" type="tel" placeholder="11 5555 5555" autocomplete="tel"></div>
+        </div>
+        <div class="fld"><label>Dirección de entrega</label><input id="f-addr" placeholder="Calle, número, localidad" autocomplete="street-address"></div>
+        <div class="fld"><label>Referencia del pedido</label><input id="f-label" placeholder="Ej: Obra Belgrano (opcional)"></div>
+        <div class="fld"><label>Observaciones</label><textarea id="f-notes" placeholder="Horarios, aclaraciones, detalles de entrega…"></textarea></div>
+        <button class="submit" id="submit" type="button">Enviar pedido</button>
+        <div class="tk-note">Vas a recibir un número de seguimiento. Te contactamos para coordinar la entrega.</div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div class="mbar" id="mbar">
+  <div class="mbar-in">
+    <div class="info"><b id="mbar-count">0 ítems</b><span>Toca para completar tus datos</span></div>
+    <button id="mbar-btn" type="button">Ver pedido</button>
+  </div>
+</div>
+
+<div class="done" id="done">
+  <div class="dbox">
+    <div class="dtop">
+      <div class="dcheck">✓</div>
+      <h3>¡Pedido enviado!</h3>
+      <p>Lo recibimos y ya está en el sistema.</p>
+    </div>
+    <div class="dbody">
+      <div class="dcode-l">Número de seguimiento</div>
+      <div class="dcode" id="done-code">#———————</div>
+      <div class="dsum" id="done-sum"></div>
+      <button class="dbtn" id="done-again" type="button">Hacer otro pedido</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ── estado ──
+  var DATA = null;                 // documento Firestore (productos, sectores…)
+  var cart = {};                   // key -> { kind, id, name, unit, qty, sectorColor, sectorName }
+  var activeSector = 'TODOS';
+  var query = '';
+  var listaId = new URLSearchParams(location.search).get('lista');
+  var connected = false;
+  var sending = false;
+
+  // ── utils ──
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function $(id){ return document.getElementById(id); }
+  var toastT;
+  function toast(msg, isErr){
+    var t=$('toast'); t.textContent=msg; t.className='toast show'+(isErr?' err':'');
+    clearTimeout(toastT); toastT=setTimeout(function(){t.className='toast';},3200);
+  }
+  function availOf(p){
+    var q = Number(p.qty)||0, min = Number(p.min)||0;
+    if(q<=0)   return {cls:'out', txt:'Sin stock'};
+    if(q<=min) return {cls:'low', txt:q+' '+(p.unit||'u')+' · pocas'};
+    return {cls:'ok', txt:q+' '+(p.unit||'u')+' disp.'};
+  }
+
+  // ── catálogo visible (respeta ?lista= y catálogo del admin) ──
+  function sectors(){ return (DATA && Array.isArray(DATA.sectors)) ? DATA.sectors : []; }
+  function secById(id){ return sectors().find(function(s){return s.id===id;}); }
+  function visibleProducts(){
+    var all = (DATA && Array.isArray(DATA.products)) ? DATA.products : [];
+    if(listaId) all = all.filter(function(p){ return p.lista===listaId; });
+    return all;
+  }
+
+  // ── render: chips de sector ──
+  function renderChips(){
+    var prods = visibleProducts();
+    var ids = {}; prods.forEach(function(p){ if(p.sector) ids[p.sector]=true; });
+    var secs = sectors().filter(function(s){ return ids[s.id]; });
+    var html = '<button class="chip'+(activeSector==='TODOS'?' on':'')+'" data-sec="TODOS">Todos</button>';
+    secs.forEach(function(s){
+      html += '<button class="chip'+(activeSector===s.id?' on':'')+'" data-sec="'+esc(s.id)+'">'+esc(s.name)+'</button>';
+    });
+    $('chips').innerHTML = secs.length ? html : '';
+  }
+
+  // ── render: grilla de productos ──
+  function renderGrid(){
+    var grid = $('grid');
+    if(!DATA){ return; } // sigue mostrando skeleton
+    var prods = visibleProducts().filter(function(p){
+      if(activeSector!=='TODOS' && p.sector!==activeSector) return false;
+      if(query){
+        var hay=(p.name||'')+' '+(p.sku||'');
+        if(hay.toLowerCase().indexOf(query)===-1) return false;
+      }
+      return true;
+    });
+
+    if(!visibleProducts().length){
+      grid.innerHTML = '<div class="state"><span class="big">📦</span>'+
+        (listaId ? 'Esta lista todavía no tiene productos cargados.' :
+                   'El catálogo está vacío por ahora.')+
+        '<br>Igual podés cargar tus productos en el paso 02.</div>';
+      return;
+    }
+    if(!prods.length){
+      grid.innerHTML = '<div class="state"><span class="big">🔍</span>No encontramos productos con ese filtro.<br>Probá con otra búsqueda.</div>';
+      return;
+    }
+
+    grid.innerHTML = prods.map(function(p){
+      var s = secById(p.sector);
+      var av = availOf(p);
+      var inCart = cart['cat:'+p.id];
+      var qty = inCart ? inCart.qty : 0;
+      var img = (p.img && String(p.img).indexOf('http')===0)
+        ? '<img src="'+esc(p.img)+'" alt="'+esc(p.name)+'" loading="lazy">'
+        : '<span class="emoji">'+esc(p.emoji||'📦')+'</span>';
+      var ctrl = qty>0
+        ? '<div class="stepper" data-id="'+esc(p.id)+'">'+
+            '<button data-act="dec" aria-label="Quitar uno">−</button>'+
+            '<span class="q">'+qty+'</span>'+
+            '<button data-act="inc" aria-label="Sumar uno">+</button>'+
+          '</div>'
+        : '<button class="btn-add" data-add="'+esc(p.id)+'" type="button">Agregar al pedido</button>';
+      return '<div class="pcard'+(qty>0?' added':'')+'">'+
+        '<div class="pthumb">'+img+'</div>'+
+        '<div class="pbody">'+
+          '<div class="pname">'+esc(p.name)+'</div>'+
+          '<div class="pmeta">'+
+            (s?'<span class="ptag" style="color:'+esc(s.color)+';border-color:'+esc(s.color)+'55">'+esc(s.name)+'</span>':'')+
+            '<span class="avail '+av.cls+'">'+esc(av.txt)+'</span>'+
+          '</div>'+
+          '<div class="padd">'+ctrl+'</div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+  }
+
+  // ── render: ticket (carrito) ──
+  function renderTicket(){
+    var keys = Object.keys(cart);
+    var totalItems = keys.length;
+    var totalUnits = keys.reduce(function(a,k){return a+cart[k].qty;},0);
+    var lines = $('tk-lines');
+
+    if(!totalItems){
+      lines.innerHTML = '<div class="tk-empty"><span class="big">🧾</span>Todavía no agregaste nada.<br>Sumá productos del catálogo o cargá los tuyos.</div>';
+    } else {
+      lines.innerHTML = keys.map(function(k){
+        var it = cart[k];
+        var sub = it.kind==='custom'
+          ? '<div class="ls custom-tag">Producto propio · '+esc(it.unit||'u')+'</div>'
+          : '<div class="ls">'+esc(it.sectorName||'Catálogo')+(it.unit?(' · '+esc(it.unit)):'')+'</div>';
+        return '<div class="line" data-key="'+esc(k)+'">'+
+          '<div class="lt"><div class="ln">'+esc(it.name)+'</div>'+sub+'</div>'+
+          '<div class="mini">'+
+            '<button data-mini="dec" aria-label="Quitar uno">−</button>'+
+            '<span class="mq">'+it.qty+'</span>'+
+            '<button data-mini="inc" aria-label="Sumar uno">+</button>'+
+          '</div>'+
+          '<button class="rm" data-rm="'+esc(k)+'" aria-label="Eliminar">✕</button>'+
+        '</div>';
+      }).join('');
+    }
+
+    var label = totalItems+' ítem'+(totalItems!==1?'s':'')+(totalUnits!==totalItems?(' · '+totalUnits+' u'):'');
+    $('tk-count').textContent = totalItems? label : '0 ítems';
+    $('mbar-count').textContent = totalItems? label : '0 ítems';
+    $('mbar').classList.toggle('show', totalItems>0);
+    var sub=$('submit'); sub.disabled = sending || totalItems===0;
+  }
+
+  function renderAll(){ renderChips(); renderGrid(); renderTicket(); }
+
+  // ── carrito: operaciones ──
+  function addCatalog(pid, delta){
+    var p = visibleProducts().find(function(x){return x.id===pid;});
+    if(!p) return;
+    var key='cat:'+pid;
+    var cur = cart[key] ? cart[key].qty : 0;
+    var next = cur + (delta==null?1:delta);
+    if(next<=0){ delete cart[key]; }
+    else {
+      var s=secById(p.sector);
+      cart[key]={kind:'catalog',id:pid,name:p.name,unit:p.unit||'u',qty:next,
+        sectorName:s?s.name:'',sectorColor:s?s.color:''};
+    }
+    renderGrid(); renderTicket();
+  }
+  function bumpKey(key, delta){
+    if(!cart[key]) return;
+    cart[key].qty += delta;
+    if(cart[key].qty<=0) delete cart[key];
+    renderGrid(); renderTicket();
+  }
+  function removeKey(key){ delete cart[key]; renderGrid(); renderTicket(); }
+
+  function addCustom(){
+    var name=$('c-name').value.trim();
+    var qty=Math.max(1, parseInt($('c-qty').value,10)||1);
+    var unit=$('c-unit').value.trim();
+    if(!name){ toast('Escribí el nombre del producto', true); $('c-name').focus(); return; }
+    var key='custom:'+name.toLowerCase();
+    if(cart[key]){ cart[key].qty+=qty; }
+    else { cart[key]={kind:'custom',id:name,name:name,unit:unit||'u',qty:qty}; }
+    $('c-name').value=''; $('c-qty').value='1'; $('c-unit').value='';
+    $('c-name').focus();
+    renderTicket();
+    toast('Agregado a tu pedido ✓');
+  }
+
+  // ── envío ──
+  function buildOrder(){
+    var items = Object.keys(cart).map(function(k){
+      var it=cart[k];
+      if(it.kind==='custom'){
+        // id legible para que el panel lo muestre tal cual aunque no esté en inventario
+        var display = it.unit && it.unit!=='u' ? (it.name+' ('+it.unit+')') : it.name;
+        return { id:display, name:display, qty:it.qty, custom:true, unit:it.unit };
+      }
+      return { id:it.id, name:it.name, qty:it.qty };
+    });
+    var client=$('f-client').value.trim();
+    var wsp=$('f-phone').value.replace(/[^0-9]/g,'');
+    var now=new Date().toISOString();
+    return {
+      id: uid(),
+      label: $('f-label').value.trim(),
+      client: client,
+      email: $('f-email').value.trim(),
+      addr: $('f-addr').value.trim(),
+      phone: $('f-phone').value.trim(),
+      wsp: wsp,
+      notes: $('f-notes').value.trim(),
+      items: items,
+      status: 'PENDIENTE',
+      date: now,
+      history: [{ status:'PENDIENTE', date:now }],
+      origin: 'web'
+    };
+  }
+
+  function submit(){
+    if(sending) return;
+    if(!Object.keys(cart).length){ toast('Agregá al menos un producto', true); return; }
+    var client=$('f-client').value.trim();
+    if(!client){ toast('Completá el nombre o empresa', true); $('f-client').focus(); return; }
+    if(!connected){ toast('Sin conexión con el servidor. Reintentá en unos segundos.', true); return; }
+
+    sending=true;
+    var btn=$('submit');
+    btn.disabled=true;
+    btn.innerHTML='<span class="spin"></span> Enviando…';
+
+    var order=buildOrder();
+    window.ALZU_sendOrder(order).then(function(res){
+      sending=false;
+      if(res && res.ok){
+        showDone(order);
+      } else {
+        btn.disabled=false; btn.textContent='Enviar pedido';
+        toast('No se pudo enviar: '+((res&&res.error)||'error')+'. Reintentá.', true);
+      }
+    });
+  }
+
+  function showDone(order){
+    var units=order.items.reduce(function(a,i){return a+i.qty;},0);
+    $('done-code').textContent='#'+order.id.slice(-7).toUpperCase();
+    $('done-sum').innerHTML='<b>'+order.items.length+'</b> producto'+(order.items.length!==1?'s':'')+
+      ' · <b>'+units+'</b> unidad'+(units!==1?'es':'')+' en total'+
+      (order.email?'<br>Te escribimos a <b>'+esc(order.email)+'</b> con las novedades.':'');
+    $('done').classList.add('show');
+  }
+
+  function resetForm(){
+    cart={};
+    ['f-client','f-email','f-phone','f-addr','f-label','f-notes','q'].forEach(function(id){ $(id).value=''; });
+    query=''; activeSector='TODOS';
+    var btn=$('submit'); btn.disabled=false; btn.textContent='Enviar pedido';
+    $('done').classList.remove('show');
+    renderAll();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  // ── eventos (delegación) ──
+  $('grid').addEventListener('click', function(e){
+    var add=e.target.closest('[data-add]');
+    if(add){ addCatalog(add.getAttribute('data-add'), 1); return; }
+    var st=e.target.closest('.stepper');
+    if(st){
+      var act=e.target.getAttribute('data-act');
+      if(act) addCatalog(st.getAttribute('data-id'), act==='inc'?1:-1);
+    }
+  });
+  $('tk-lines').addEventListener('click', function(e){
+    var rm=e.target.closest('[data-rm]');
+    if(rm){ removeKey(rm.getAttribute('data-rm')); return; }
+    var mini=e.target.getAttribute('data-mini');
+    if(mini){
+      var line=e.target.closest('.line');
+      if(line) bumpKey(line.getAttribute('data-key'), mini==='inc'?1:-1);
+    }
+  });
+  $('chips').addEventListener('click', function(e){
+    var c=e.target.closest('.chip'); if(!c) return;
+    activeSector=c.getAttribute('data-sec'); renderChips(); renderGrid();
+  });
+  $('q').addEventListener('input', function(e){ query=e.target.value.trim().toLowerCase(); renderGrid(); });
+  $('c-add').addEventListener('click', addCustom);
+  $('c-name').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addCustom(); } });
+  $('submit').addEventListener('click', submit);
+  $('done-again').addEventListener('click', resetForm);
+  $('mbar-btn').addEventListener('click', function(){
+    $('f-client').focus({preventScroll:true});
+    document.querySelector('.side').scrollIntoView({behavior:'smooth',block:'start'});
+  });
+
+  // ── conexión Firestore ──
+  function setConn(on){
+    connected=on;
+    var c=$('conn');
+    c.className='conn '+(on?'on':'off');
+    $('conn-txt').textContent = on ? 'En línea' : 'Sin conexión';
+  }
+
+  function applyScope(){
+    if(!listaId){ $('cat-title').textContent='Catálogo'; return; }
+    var l=(DATA && Array.isArray(DATA.listas)) ? DATA.listas.find(function(x){return x.id===listaId;}) : null;
+    var name = l ? l.name : 'Lista seleccionada';
+    $('cat-title').textContent=name;
+    var sc=$('scope'); sc.style.display='inline-flex'; sc.innerHTML='🔖 Estás viendo: '+esc(name);
+  }
+
+  function start(){
+    try{
+      window.ALZU_listen(function(data){
+        setConn(true);
+        DATA=data||{products:[],sectors:[],listas:[]};
+        applyScope();
+        renderAll();
+      }, function(){ setConn(false); });
+    }catch(e){
+      setConn(false);
+      $('grid').innerHTML='<div class="state"><span class="big">⚠️</span>No pudimos conectar con el servidor.<br>Revisá tu conexión y recargá la página.</div>';
+    }
+  }
+
+  if(window.ALZU_listen){ start(); }
+  else { window.addEventListener('alzu-ready', start, {once:true}); }
+})();
+</script>
+</body>
+</html>
